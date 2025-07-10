@@ -62,7 +62,6 @@ runs:
             echo "Unknown operation: ${{ inputs.operation }}"
             result="Unknown operation"
             status="error"
-            exit 1
             ;;
         esac
         
