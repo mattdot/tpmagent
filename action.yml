@@ -15,6 +15,19 @@ inputs:
   issue_number:
     description: 'Issue number to comment on'
     required: true
+  azure_openai_api_key:
+    description: 'Azure OpenAI API key for AI-powered analysis (optional)'
+    required: false
+  azure_openai_endpoint:
+    description: 'Azure OpenAI endpoint URL (optional)'
+    required: false
+  azure_openai_api_version:
+    description: 'Azure OpenAI API version (optional, defaults to 2023-12-01-preview)'
+    required: false
+    default: '2023-12-01-preview'
+  azure_openai_deployment_name:
+    description: 'Azure OpenAI deployment name for the model (optional)'
+    required: false
 
 outputs:
   result:
