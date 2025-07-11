@@ -1,0 +1,13 @@
+.git
+.github
+.gitignore
+*.md
+bin/
+obj/
+.vscode/
+.vs/
+*.log
+*.tmp
+*.swp
+*.swo
+*~
