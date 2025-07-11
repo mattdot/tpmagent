@@ -55,3 +55,12 @@ out/
 # Cache directories
 .cache/
 .parcel-cache/
+
+# .NET build artifacts
+bin/
+obj/
+*.user
+*.vsidx
+*.v2
+.vs/
+*.tmp

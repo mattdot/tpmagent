@@ -1,75 +1,30 @@
 name: 'TPM Agent'
-description: 'A reusable GitHub Action for TPM-related operations'
+description: 'A reusable GitHub Action for TPM-related operations using Semantic Kernel'
 author: 'Matt Dotson'
 
 inputs:
-  operation:
-    description: 'The operation to perform'
+  issue_content:
+    description: 'The content of the GitHub issue to process'
     required: true
-    default: 'info'
-  target:
-    description: 'Target for the operation'
-    required: false
-    default: ''
-  verbose:
-    description: 'Enable verbose output'
-    required: false
-    default: 'false'
+  github_token:
+    description: 'GitHub token for API access'
+    required: true
+  repository:
+    description: 'Repository in the format owner/repo'
+    required: true
+  issue_number:
+    description: 'Issue number to comment on'
+    required: true
 
 outputs:
   result:
     description: 'Result of the operation'
-    value: ${{ steps.main.outputs.result }}
   status:
     description: 'Status of the operation'
-    value: ${{ steps.main.outputs.status }}
 
 runs:
-  using: 'composite'
-  steps:
-    - name: 'Run TPM Agent'
-      id: main
-      shell: bash
-      run: |
-        echo "::group::TPM Agent - ${{ inputs.operation }}"
-        
-        # Set verbose mode
-        if [ "${{ inputs.verbose }}" == "true" ]; then
-          set -x
-        fi
-        
-        # Perform the operation
-        case "${{ inputs.operation }}" in
-          "info")
-            echo "Getting TPM information..."
-            result="TPM info retrieved successfully"
-            status="success"
-            ;;
-          "check")
-            echo "Checking TPM status..."
-            if [ -n "${{ inputs.target }}" ]; then
-              echo "Checking target: ${{ inputs.target }}"
-            fi
-            result="TPM check completed"
-            status="success"
-            ;;
-          "validate")
-            echo "Validating TPM configuration..."
-            result="TPM validation completed"
-            status="success"
-            ;;
-          *)
-            echo "Unknown operation: ${{ inputs.operation }}"
-            result="Unknown operation"
-            status="error"
-            ;;
-        esac
-        
-        echo "result=$result" >> $GITHUB_OUTPUT
-        echo "status=$status" >> $GITHUB_OUTPUT
-        
-        echo "Operation completed: $result"
-        echo "::endgroup::"
+  using: 'docker'
+  image: 'Dockerfile'
 
 branding:
   icon: 'shield'

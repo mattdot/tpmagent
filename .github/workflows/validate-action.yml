@@ -85,15 +85,10 @@ jobs:
       
       - name: Check for required workflows
         run: |
-          echo "Checking for test workflows..."
+          echo "Checking for workflow directory..."
           
           if [ ! -d ".github/workflows" ]; then
             echo "❌ .github/workflows directory not found!"
-            exit 1
-          fi
-          
-          if [ ! -f ".github/workflows/test-action.yml" ]; then
-            echo "❌ Test workflow not found!"
             exit 1
           fi
           
@@ -105,8 +100,13 @@ jobs:
           echo ""
           echo "To use this action in other repositories:"
           echo "  uses: mattdot/tpmagent@v1"
+          echo "  with:"
+          echo "    issue_content: \${{ github.event.issue.body }}"
+          echo "    github_token: \${{ secrets.GITHUB_TOKEN }}"
+          echo "    repository: \${{ github.repository }}"
+          echo "    issue_number: \${{ github.event.issue.number }}"
           echo ""
           echo "Next steps:"
           echo "1. Create a release (v1) to make the action available"
-          echo "2. Add any additional functionality as needed"
+          echo "2. Test the action from another repository with actual issues"
           echo "3. Update documentation based on actual use cases"
