@@ -1,22 +1,7 @@
-# Use a simpler approach with a prebuilt .NET image
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+# Use the .NET SDK image for building and running
+FROM mcr.microsoft.com/dotnet/sdk:8.0
 
-# Set working directory
-WORKDIR /app
-
-# Copy source files
-COPY src/ ./src/
-
-# Build the application
-WORKDIR /app/src
-RUN dotnet restore --no-cache
-RUN dotnet build -c Release -o /app/build
-RUN dotnet publish -c Release -o /app/publish
-
-# Create runtime image
-FROM mcr.microsoft.com/dotnet/runtime:8.0
-
-# Install TPM tools
+# Install TPM tools for comprehensive TPM operations
 RUN apt-get update && apt-get install -y \
     tpm2-tools \
     && rm -rf /var/lib/apt/lists/*
@@ -24,8 +9,8 @@ RUN apt-get update && apt-get install -y \
 # Set working directory
 WORKDIR /app
 
-# Copy the published application
-COPY --from=build /app/publish .
+# Copy source files
+COPY src/ ./src/
 
 # Copy entrypoint script
 COPY entrypoint.sh /entrypoint.sh

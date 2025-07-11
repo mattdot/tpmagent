@@ -18,9 +18,22 @@ echo "Operation: $INPUT_OPERATION"
 echo "Target: $INPUT_TARGET"
 echo "Verbose: $INPUT_VERBOSE"
 
-# Run the C# application
+# Build and run the C# application
+echo "Building and running TPM Agent..."
+cd /app/src || cd src || {
+  echo "Error: Cannot find source directory"
+  exit 1
+}
+
+# Build the application if not already built
+if [ ! -f "bin/Release/net8.0/TpmAgent.dll" ]; then
+  echo "Building the application..."
+  dotnet build -c Release
+fi
+
+# Run the application
 echo "Running TPM Agent..."
-dotnet TpmAgent.dll
+dotnet run --configuration Release --no-build
 
 # Check if the output file was created
 if [ -f "/tmp/github_output.txt" ]; then
