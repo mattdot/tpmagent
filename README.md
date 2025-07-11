@@ -21,7 +21,7 @@ This action runs inside a Docker container and uses a C# application built with 
 
 ## Usage
 
-### Basic Usage
+### Basic Usage (without Azure OpenAI)
 
 ```yaml
 - name: Process GitHub Issue
@@ -31,6 +31,22 @@ This action runs inside a Docker container and uses a C# application built with 
     github_token: ${{ secrets.GITHUB_TOKEN }}
     repository: ${{ github.repository }}
     issue_number: ${{ github.event.issue.number }}
+```
+
+### Advanced Usage with Azure OpenAI
+
+```yaml
+- name: Process GitHub Issue with Azure OpenAI
+  uses: mattdot/tpmagent@v1
+  with:
+    issue_content: ${{ github.event.issue.body }}
+    github_token: ${{ secrets.GITHUB_TOKEN }}
+    repository: ${{ github.repository }}
+    issue_number: ${{ github.event.issue.number }}
+    azure_openai_api_key: ${{ secrets.AZURE_OPENAI_API_KEY }}
+    azure_openai_endpoint: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+    azure_openai_deployment_name: ${{ secrets.AZURE_OPENAI_DEPLOYMENT_NAME }}
+    azure_openai_api_version: '2023-12-01-preview' # Optional, defaults to this version
 ```
 
 ### Advanced Usage with Issue Events
@@ -68,6 +84,10 @@ jobs:
 | `github_token` | GitHub token for API access | Yes | - |
 | `repository` | Repository in the format owner/repo | Yes | - |
 | `issue_number` | Issue number to comment on | Yes | - |
+| `azure_openai_api_key` | Azure OpenAI API key for AI-powered analysis | No | - |
+| `azure_openai_endpoint` | Azure OpenAI endpoint URL | No | - |
+| `azure_openai_deployment_name` | Azure OpenAI deployment name for the model | No | - |
+| `azure_openai_api_version` | Azure OpenAI API version | No | `2023-12-01-preview` |
 
 ## Outputs
 
@@ -115,7 +135,39 @@ jobs:
   process-issue:
     runs-on: ubuntu-latest
     steps:
-      - name: Process Issue
+      - name: Process Issue with Azure OpenAI
+        uses: mattdot/tpmagent@v1
+        with:
+          issue_content: ${{ github.event.issue.body }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          issue_number: ${{ github.event.issue.number }}
+          azure_openai_api_key: ${{ secrets.AZURE_OPENAI_API_KEY }}
+          azure_openai_endpoint: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+          azure_openai_deployment_name: ${{ secrets.AZURE_OPENAI_DEPLOYMENT_NAME }}
+        id: issue-processor
+      
+      - name: Display Processing Results
+        run: |
+          echo "Processing Status: ${{ steps.issue-processor.outputs.status }}"
+          echo "Processing Result: ${{ steps.issue-processor.outputs.result }}"
+```
+
+### Fallback Configuration
+
+If Azure OpenAI is not configured or fails, the agent automatically falls back to keyword-based analysis:
+
+```yaml
+name: Issue Processing (Basic Mode)
+on:
+  issues:
+    types: [opened, edited]
+
+jobs:
+  process-issue:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Process Issue (Basic Analysis)
         uses: mattdot/tpmagent@v1
         with:
           issue_content: ${{ github.event.issue.body }}
@@ -138,6 +190,37 @@ The agent analyzes GitHub issues to determine:
 - **Issue Type**: Automatically categorizes as bug, feature request, or question
 - **Priority Level**: Assigns high, medium, or low priority based on keywords
 - **Topic Detection**: Identifies relevant topics (TPM, Security, Docker, etc.)
+
+### Dual Analysis Modes
+
+**Basic Analysis Mode (Default)**:
+- Uses keyword-based analysis for issue classification
+- No external dependencies required
+- Provides consistent, fast analysis
+
+**Azure OpenAI Mode (Optional)**:
+- Leverages Azure OpenAI for intelligent issue understanding
+- Provides more nuanced analysis and topic detection
+- Generates contextual summaries and insights
+- Requires Azure OpenAI configuration
+
+### Azure OpenAI Configuration
+
+To enable AI-powered analysis, configure the following secrets in your repository:
+
+1. **AZURE_OPENAI_API_KEY**: Your Azure OpenAI API key
+2. **AZURE_OPENAI_ENDPOINT**: Your Azure OpenAI endpoint URL (e.g., `https://your-resource.openai.azure.com`)
+3. **AZURE_OPENAI_DEPLOYMENT_NAME**: The name of your deployed model (e.g., `gpt-4`, `gpt-35-turbo`)
+
+**Security Note**: Always use GitHub repository secrets for sensitive configuration. Never hardcode API keys or endpoints in your workflow files.
+
+#### Setting up Azure OpenAI
+
+1. Create an Azure OpenAI resource in the Azure portal
+2. Deploy a model (GPT-4 or GPT-3.5-Turbo recommended)
+3. Copy the endpoint URL and API key
+4. Add these values as secrets in your GitHub repository settings
+5. Reference them in your workflow using `${{ secrets.SECRET_NAME }}`
 
 ### Contextual Response Generation
 

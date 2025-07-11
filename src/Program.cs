@@ -2,6 +2,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
+using Microsoft.SemanticKernel.Connectors.AzureOpenAI;
 using Octokit;
 using System.Text.Json;
 
@@ -36,8 +37,24 @@ public class Program
             var githubToken = Environment.GetEnvironmentVariable("INPUT_GITHUB_TOKEN") ?? "";
             var repository = Environment.GetEnvironmentVariable("INPUT_REPOSITORY") ?? "";
             var issueNumber = Environment.GetEnvironmentVariable("INPUT_ISSUE_NUMBER") ?? "";
+            
+            // Parse Azure OpenAI configuration (optional)
+            var azureApiKey = Environment.GetEnvironmentVariable("INPUT_AZURE_OPENAI_API_KEY") ?? "";
+            var azureEndpoint = Environment.GetEnvironmentVariable("INPUT_AZURE_OPENAI_ENDPOINT") ?? "";
+            var azureApiVersion = Environment.GetEnvironmentVariable("INPUT_AZURE_OPENAI_API_VERSION") ?? "2023-12-01-preview";
+            var azureDeploymentName = Environment.GetEnvironmentVariable("INPUT_AZURE_OPENAI_DEPLOYMENT_NAME") ?? "";
 
             logger.LogInformation($"Processing issue #{issueNumber} from {repository}");
+            
+            // Log Azure OpenAI configuration status (without exposing sensitive data)
+            var hasAzureConfig = !string.IsNullOrEmpty(azureApiKey) && !string.IsNullOrEmpty(azureEndpoint);
+            logger.LogInformation($"Azure OpenAI configuration: {(hasAzureConfig ? "Enabled" : "Disabled")}");
+            if (hasAzureConfig)
+            {
+                logger.LogInformation($"Azure OpenAI endpoint: {azureEndpoint}");
+                logger.LogInformation($"Azure OpenAI API version: {azureApiVersion}");
+                logger.LogInformation($"Azure OpenAI deployment: {(string.IsNullOrEmpty(azureDeploymentName) ? "Not specified" : azureDeploymentName)}");
+            }
 
             if (string.IsNullOrEmpty(issueContent))
             {
@@ -66,7 +83,15 @@ public class Program
             };
 
             // Create and run the issue processing agent using Process Framework pattern
-            var agent = new IssueProcessingAgent(logger, github);
+            var azureOpenAIConfig = new AzureOpenAIConfig
+            {
+                ApiKey = azureApiKey,
+                Endpoint = azureEndpoint,
+                ApiVersion = azureApiVersion,
+                DeploymentName = azureDeploymentName
+            };
+            
+            var agent = new IssueProcessingAgent(logger, github, azureOpenAIConfig);
             var result = await agent.ProcessIssueAsync(issueContent, repository, issueNum);
             
             logger.LogInformation($"Issue processing completed: {result}");
@@ -108,14 +133,39 @@ public class IssueProcessingAgent
     private readonly ILogger _logger;
     private readonly GitHubClient _github;
     private readonly Kernel _kernel;
+    private readonly AzureOpenAIConfig _azureConfig;
+    private readonly bool _hasAzureOpenAI;
 
-    public IssueProcessingAgent(ILogger logger, GitHubClient github)
+    public IssueProcessingAgent(ILogger logger, GitHubClient github, AzureOpenAIConfig azureConfig)
     {
         _logger = logger;
         _github = github;
+        _azureConfig = azureConfig;
+        _hasAzureOpenAI = !string.IsNullOrEmpty(azureConfig.ApiKey) && !string.IsNullOrEmpty(azureConfig.Endpoint);
         
         // Create kernel for process-like workflow
         var builder = Kernel.CreateBuilder();
+        
+        // Configure Azure OpenAI if credentials are provided
+        if (_hasAzureOpenAI)
+        {
+            _logger.LogInformation("Configuring kernel with Azure OpenAI");
+            
+            // Use deployment name if provided, otherwise use a default model name
+            var deploymentName = string.IsNullOrEmpty(azureConfig.DeploymentName) ? "gpt-4" : azureConfig.DeploymentName;
+            
+            builder.AddAzureOpenAIChatCompletion(
+                deploymentName: deploymentName,
+                endpoint: azureConfig.Endpoint,
+                apiKey: azureConfig.ApiKey,
+                apiVersion: azureConfig.ApiVersion
+            );
+        }
+        else
+        {
+            _logger.LogInformation("No Azure OpenAI configuration provided, using basic analysis");
+        }
+        
         _kernel = builder.Build();
     }
 
@@ -161,58 +211,22 @@ public class IssueProcessingAgent
         
         try
         {
-            // Analyze the issue content using simple logic
-            // In a real implementation, this would use Semantic Kernel's AI capabilities
             var analysis = new IssueAnalysis();
             
-            var content = context.IssueContent.ToLower();
-            
-            // Determine issue type
-            if (content.Contains("bug") || content.Contains("error") || content.Contains("issue"))
+            if (_hasAzureOpenAI)
             {
-                analysis.Type = "bug";
-            }
-            else if (content.Contains("feature") || content.Contains("enhancement") || content.Contains("request"))
-            {
-                analysis.Type = "feature";
+                // Use Azure OpenAI for intelligent analysis
+                analysis = await AnalyzeIssueWithAIAsync(context.IssueContent);
+                context.Logger.LogInformation("Analysis completed using Azure OpenAI");
             }
             else
             {
-                analysis.Type = "question";
+                // Fallback to basic keyword analysis
+                analysis = AnalyzeIssueBasic(context.IssueContent);
+                context.Logger.LogInformation("Analysis completed using basic keyword detection");
             }
-
-            // Determine priority
-            if (content.Contains("urgent") || content.Contains("critical") || content.Contains("high"))
-            {
-                analysis.Priority = "high";
-            }
-            else if (content.Contains("low") || content.Contains("minor"))
-            {
-                analysis.Priority = "low";
-            }
-            else
-            {
-                analysis.Priority = "medium";
-            }
-
-            // Extract key topics
-            var topics = new List<string>();
-            if (content.Contains("tpm")) topics.Add("TPM");
-            if (content.Contains("security")) topics.Add("Security");
-            if (content.Contains("authentication")) topics.Add("Authentication");
-            if (content.Contains("encryption")) topics.Add("Encryption");
-            if (content.Contains("docker")) topics.Add("Docker");
-            if (content.Contains("container")) topics.Add("Container");
             
-            analysis.Topics = topics;
-            analysis.Summary = context.IssueContent.Length > 100 
-                ? context.IssueContent.Substring(0, 100) + "..."
-                : context.IssueContent;
-
-            context.Logger.LogInformation($"Analysis completed - Type: {analysis.Type}, Priority: {analysis.Priority}, Topics: {string.Join(", ", analysis.Topics)}");
-            
-            // Simulate some async work
-            await Task.Delay(10);
+            context.Logger.LogInformation($"Analysis results - Type: {analysis.Type}, Priority: {analysis.Priority}, Topics: {string.Join(", ", analysis.Topics)}");
             
             return analysis;
         }
@@ -220,6 +234,120 @@ public class IssueProcessingAgent
         {
             context.Logger.LogInformation("::endgroup::");
         }
+    }
+
+    private async Task<IssueAnalysis> AnalyzeIssueWithAIAsync(string issueContent)
+    {
+        try
+        {
+            var prompt = $@"
+Analyze the following GitHub issue and provide a JSON response with the following structure:
+{{
+  ""type"": ""bug"" | ""feature"" | ""question"",
+  ""priority"": ""low"" | ""medium"" | ""high"",
+  ""topics"": [""list"", ""of"", ""relevant"", ""topics""],
+  ""summary"": ""brief summary of the issue""
+}}
+
+Issue content:
+{issueContent}
+
+Focus on identifying:
+1. Whether this is a bug report, feature request, or question
+2. The priority level based on urgency indicators
+3. Key topics related to TPM, security, authentication, encryption, Docker, containers, etc.
+4. A concise summary
+
+Respond only with valid JSON.";
+
+            var response = await _kernel.InvokePromptAsync(prompt);
+            var result = response.GetValue<string>();
+            
+            if (string.IsNullOrEmpty(result))
+            {
+                _logger.LogWarning("Empty response from Azure OpenAI, falling back to basic analysis");
+                return AnalyzeIssueBasic(issueContent);
+            }
+
+            // Parse JSON response
+            var jsonResponse = JsonSerializer.Deserialize<JsonElement>(result);
+            
+            var analysis = new IssueAnalysis
+            {
+                Type = jsonResponse.GetProperty("type").GetString() ?? "question",
+                Priority = jsonResponse.GetProperty("priority").GetString() ?? "medium",
+                Summary = jsonResponse.GetProperty("summary").GetString() ?? "AI analysis completed"
+            };
+            
+            // Parse topics array
+            if (jsonResponse.TryGetProperty("topics", out var topicsElement) && topicsElement.ValueKind == JsonValueKind.Array)
+            {
+                analysis.Topics = topicsElement.EnumerateArray()
+                    .Select(t => t.GetString() ?? "")
+                    .Where(t => !string.IsNullOrEmpty(t))
+                    .ToList();
+            }
+            
+            return analysis;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during AI analysis, falling back to basic analysis");
+            return AnalyzeIssueBasic(issueContent);
+        }
+    }
+
+    private IssueAnalysis AnalyzeIssueBasic(string issueContent)
+    {
+        // Original basic analysis logic
+        var analysis = new IssueAnalysis();
+        var content = issueContent.ToLower();
+        
+        // Determine issue type
+        if (content.Contains("bug") || content.Contains("error") || content.Contains("issue"))
+        {
+            analysis.Type = "bug";
+        }
+        else if (content.Contains("feature") || content.Contains("enhancement") || content.Contains("request"))
+        {
+            analysis.Type = "feature";
+        }
+        else
+        {
+            analysis.Type = "question";
+        }
+
+        // Determine priority
+        if (content.Contains("urgent") || content.Contains("critical") || content.Contains("high"))
+        {
+            analysis.Priority = "high";
+        }
+        else if (content.Contains("low") || content.Contains("minor"))
+        {
+            analysis.Priority = "low";
+        }
+        else
+        {
+            analysis.Priority = "medium";
+        }
+
+        // Extract key topics
+        var topics = new List<string>();
+        if (content.Contains("tpm")) topics.Add("TPM");
+        if (content.Contains("security")) topics.Add("Security");
+        if (content.Contains("authentication")) topics.Add("Authentication");
+        if (content.Contains("encryption")) topics.Add("Encryption");
+        if (content.Contains("docker")) topics.Add("Docker");
+        if (content.Contains("container")) topics.Add("Container");
+        if (content.Contains("openai")) topics.Add("OpenAI");
+        if (content.Contains("azure")) topics.Add("Azure");
+        
+        analysis.Topics = topics;
+        analysis.Summary = issueContent.Length > 100 
+            ? issueContent.Substring(0, 100) + "..."
+            : issueContent;
+            
+        return analysis;
     }
 
     private async Task<string> ExecuteCommentGenerationStepAsync(ProcessContext context)
@@ -269,7 +397,8 @@ public class IssueProcessingAgent
 
     private string GenerateContextualComment(IssueAnalysis analysis, string issueContent)
     {
-        var comment = "Thank you for this issue! I've analyzed it using the Semantic Kernel Process Framework.\n\n";
+        var analysisMethod = _hasAzureOpenAI ? "Azure OpenAI" : "keyword analysis";
+        var comment = $"Thank you for this issue! I've analyzed it using {analysisMethod} with the Semantic Kernel Process Framework.\n\n";
         
         comment += "## Analysis Results\n\n";
         comment += $"- **Type**: {analysis.Type}\n";
@@ -278,6 +407,11 @@ public class IssueProcessingAgent
         if (analysis.Topics.Any())
         {
             comment += $"- **Topics**: {string.Join(", ", analysis.Topics)}\n";
+        }
+        
+        if (!string.IsNullOrEmpty(analysis.Summary) && analysis.Summary != issueContent)
+        {
+            comment += $"- **Summary**: {analysis.Summary}\n";
         }
         
         comment += "\n## Next Steps\n\n";
@@ -326,8 +460,17 @@ public class IssueProcessingAgent
             comment += "- Environment details\n\n";
         }
         
+        if (analysis.Topics.Contains("OpenAI") || analysis.Topics.Contains("Azure"))
+        {
+            comment += "For Azure OpenAI configuration issues, please check:\n";
+            comment += "- API key validity and permissions\n";
+            comment += "- Endpoint URL format (should include https://)\n";
+            comment += "- Deployment name matches your Azure OpenAI resource\n";
+            comment += "- API version compatibility\n\n";
+        }
+        
         comment += "---\n";
-        comment += "*This response was generated automatically using the Semantic Kernel Process Framework.*";
+        comment += $"*This response was generated automatically using the Semantic Kernel Process Framework with {analysisMethod}.*";
         
         return comment;
     }
@@ -350,4 +493,12 @@ public class IssueAnalysis
     public string Priority { get; set; } = "";
     public List<string> Topics { get; set; } = new();
     public string Summary { get; set; } = "";
+}
+
+public class AzureOpenAIConfig
+{
+    public string ApiKey { get; set; } = "";
+    public string Endpoint { get; set; } = "";
+    public string ApiVersion { get; set; } = "";
+    public string DeploymentName { get; set; } = "";
 }
