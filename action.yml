@@ -3,18 +3,18 @@ description: 'A reusable GitHub Action for TPM-related operations using Semantic
 author: 'Matt Dotson'
 
 inputs:
-  operation:
-    description: 'The operation to perform'
+  issue_content:
+    description: 'The content of the GitHub issue to process'
     required: true
-    default: 'info'
-  target:
-    description: 'Target for the operation'
-    required: false
-    default: ''
-  verbose:
-    description: 'Enable verbose output'
-    required: false
-    default: 'false'
+  github_token:
+    description: 'GitHub token for API access'
+    required: true
+  repository:
+    description: 'Repository in the format owner/repo'
+    required: true
+  issue_number:
+    description: 'Issue number to comment on'
+    required: true
 
 outputs:
   result:
