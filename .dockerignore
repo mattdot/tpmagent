@@ -11,3 +11,9 @@ obj/
 *.swp
 *.swo
 *~
+.cache/
+.parcel-cache/
+node_modules/
+dist/
+build/
+out/
